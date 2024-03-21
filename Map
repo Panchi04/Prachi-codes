@@ -1,0 +1,100 @@
+To work with your `map_d.xlsx` file containing fields for city, latitude, longitude, date, and count, you'll need to adjust the initial data loading and preparation step to read from an Excel file. The rest of the Dash application will remain mostly unchanged, except for adapting the column names to match those in your file.
+
+First, ensure you have the necessary library to read Excel files. You might need to install `openpyxl` or `xlrd`:
+
+```bash
+pip install openpyxl
+```
+
+or
+
+```bash
+pip install xlrd
+```
+
+Then, you can adjust the code to load your Excel file:
+
+### Adjusted Code for Reading `map_d.xlsx`
+
+```python
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output, State
+import pandas as pd
+import plotly.express as px
+
+# Load the data from the Excel file
+df = pd.read_excel('map_d.xlsx', engine='openpyxl')
+
+# Ensure 'Date' is datetime type
+df['Date'] = pd.to_datetime(df['Date'])
+
+# Generate unique marks for the slider based on unique dates
+date_marks = {i: date.strftime('%Y-%m-%d') for i, date in enumerate(sorted(df['Date'].dt.date.unique()))}
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    dcc.Graph(id='map-visualization'),
+    html.Button('Play', id='play-button', n_clicks=0),
+    dcc.Slider(
+        id='date-slider',
+        min=0,
+        max=len(df['Date'].unique()) - 1,
+        value=0,
+        marks=date_marks,
+        step=None
+    ),
+    dcc.Interval(
+        id='auto-play-interval',
+        interval=2000,  # 2 seconds per step
+        n_intervals=0,
+        disabled=True  # Disabled by default
+    )
+], style={'width': '50%', 'padding': '20px', 'align-items': 'center'})
+
+@app.callback(
+    Output('map-visualization', 'figure'),
+    [Input('date-slider', 'value')]
+)
+def update_map(selected_date_index):
+    # Find the date corresponding to the slider position
+    selected_date = list(date_marks.values())[selected_date_index]
+    filtered_df = df[df['Date'].dt.strftime('%Y-%m-%d') == selected_date]
+    fig = px.scatter_mapbox(filtered_df,
+                            lat='Latitude',
+                            lon='Longitude',
+                            size='count',
+                            color='count',
+                            color_continuous_scale=px.colors.cyclical.IceFire,
+                            size_max=15,
+                            zoom=4,
+                            mapbox_style='carto-positron')  # Use 'open-street-map' if no Mapbox token
+    # Uncomment and set your Mapbox access token if needed
+    # fig.update_layout(mapbox_accesstoken='YOUR_MAPBOX_ACCESS_TOKEN')
+    return fig
+
+@app.callback(
+    Output('auto-play-interval', 'disabled'),
+    [Input('play-button', 'n_clicks')]
+)
+def toggle_play_pause(n_clicks):
+    return not n_clicks % 2  # Toggle based on odd/even clicks
+
+@app.callback(
+    Output('date-slider', 'value'),
+    [Input('auto-play-interval', 'n_intervals')],
+    [State('date-slider', 'value'), State('date-slider', 'max')]
+)
+def auto_advance_slider(n, current_value, max_value):
+    return (current_value + 1) % (max_value + 1)  # Loop back to start after reaching the end
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+```
+
+### Important Notes:
+- Ensure you replace `'map_d.xlsx'` with the correct path to your Excel file if it's not in the same directory as your script.
+- The `engine='openpyxl'` parameter in `pd.read_excel` is required for `.xlsx` files. If your file is `.xls`, you might need to use `engine='xlrd'`.
+- This code assumes your date field in the Excel file is in a recognizable datetime format. If the dates are in a custom format, you might need to adjust the parsing.
+- The map will use the `'carto-positron'` style by default, which does not require a Mapbox token. If you prefer to use a Mapbox style, replace `'carto-positron'` with your preferred style and
